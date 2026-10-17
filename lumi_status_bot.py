@@ -320,6 +320,7 @@ def reply_chat_ids(token):
     For setups where `setup` can't run (GitHub Actions); the id goes to Telegram,
     never to the (possibly public) log.
     """
+    bot = "@" + telegram(token, "getMe")["username"]
     chats, offset = set(), None
     for upd in telegram(token, "getUpdates", {"timeout": 0, "allowed_updates": json.dumps(["message"])}):
         offset = upd["update_id"] + 1
@@ -335,8 +336,8 @@ def reply_chat_ids(token):
     if offset is not None:
         telegram(token, "getUpdates", {"offset": offset, "timeout": 0})  # mark read
     if not chats:
-        sys.exit("No messages found. Send your bot any message in Telegram, then run this again.")
-    print(f"Replied to {len(chats)} chat(s) with their chat id.")
+        sys.exit(f"No messages found for {bot}. Send {bot} any message in Telegram, then run this again.")
+    print(f"{bot} replied to {len(chats)} chat(s) with their chat id.")
 
 
 def load_config():
