@@ -1,0 +1,61 @@
+name: LUMI status
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 min (UTC); GitHub may start runs a few minutes late
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "check = normal poll · test = send current status now · chat-id = bot replies with your chat id"
+        type: choice
+        options: [check, test, chat-id]
+        default: check
+
+permissions:
+  contents: write   # only for the keepalive commit below
+
+concurrency:
+  group: lumi-status
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      LUMI_BOT_HOME: ${{ github.workspace }}/.state
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      LUMI_WATCH: ${{ vars.LUMI_WATCH }}
+      MODE: ${{ inputs.mode || 'check' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # The last reported status is carried between runs in the Actions cache.
+      - name: Restore last reported status
+        uses: actions/cache/restore@v6
+        with:
+          path: .state/state.json
+          key: lumi-state-${{ github.run_id }}
+          restore-keys: lumi-state-
+
+      - name: Check LUMI
+        run: python3 lumi_status_bot.py "$MODE"
+
+      - name: Save reported status
+        if: always() && env.MODE == 'check' && hashFiles('.state/state.json') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: .state/state.json
+          key: lumi-state-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # GitHub pauses schedules in public repos after 60 days without commits.
+      - name: Keep the schedule alive
+        if: github.event_name == 'schedule'
+        run: |
+          if [ $(( $(date +%s) - $(git log -1 --format=%ct) )) -gt $(( 50 * 86400 )) ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "keepalive: scheduled LUMI checks"
+            git push
+          fi
